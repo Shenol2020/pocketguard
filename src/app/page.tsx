@@ -618,32 +618,7 @@ export default function Home() {
             </div>
           )}
 
-          {/* ── Reset Confirmation Modal ── */}
-          {showReset && (
-            <div className="pt-2 pb-2 animate-fade-up">
-              <div className="glass-card p-4 space-y-3 animate-slide-down" style={{ boxShadow: "var(--glow-rose)" }}>
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-8 h-8 rounded-lg bg-[rgba(251,113,133,0.12)] flex items-center justify-center">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-rose)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-                    </svg>
-                  </div>
-                  <span className="text-sm font-semibold text-[var(--accent-rose)]">Reset Everything?</span>
-                </div>
-                <p className="text-sm text-[var(--text-secondary)]">
-                  This will permanently delete all your expenses, balances, and savings data.
-                </p>
-                <div className="flex gap-3">
-                  <button className="btn-ghost flex-1" onClick={() => setShowReset(false)}>
-                    Cancel
-                  </button>
-                  <button id="btn-confirm-reset" className="btn-danger flex-1" onClick={handleReset}>
-                    Delete All Data
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+
         </div>
       ) : (
         /* ═══════════════════ HISTORY VIEW ═══════════════════ */
@@ -695,6 +670,45 @@ export default function Home() {
           )}
         </div>
       )}
+
+      {/* ── Reset Confirmation Overlay ── */}
+      {showReset && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-5"
+          style={{ backgroundColor: "rgba(5, 13, 26, 0.85)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
+          onClick={() => setShowReset(false)}
+        >
+          <div
+            className="glass-card p-6 w-full max-w-sm space-y-4 animate-slide-down"
+            style={{ boxShadow: "var(--glow-rose)", border: "1px solid rgba(251,113,133,0.2)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[rgba(251,113,133,0.12)] flex items-center justify-center shrink-0">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-rose)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-[var(--text-primary)]">Reset Everything?</h3>
+                <p className="text-xs text-[var(--text-muted)]">This cannot be undone</p>
+              </div>
+            </div>
+            <p className="text-sm text-[var(--text-secondary)]">
+              All your expenses, balances, and savings data will be permanently deleted.
+            </p>
+            <div className="flex gap-3 pt-1">
+              <button className="btn-ghost flex-1" onClick={() => setShowReset(false)}>
+                Cancel
+              </button>
+              <button id="btn-confirm-reset" className="btn-danger flex-1" onClick={handleReset}>
+                Delete All Data
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </main>
   );
 }
