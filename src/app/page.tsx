@@ -2,6 +2,67 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 
+/* ───────────────────── IndexedDB Persistence ──────────────── */
+const DB_NAME = "pocketguard_db";
+const DB_STORE = "state";
+const DB_KEY = "app_state";
+
+function openDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(DB_STORE)) {
+        db.createObjectStore(DB_STORE);
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveToIDB(data: AppState): Promise<void> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(DB_STORE, "readwrite");
+    tx.objectStore(DB_STORE).put(data, DB_KEY);
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    // Fallback to localStorage
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch { /* noop */ }
+  }
+}
+
+async function loadFromIDB(): Promise<AppState | null> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(DB_STORE, "readonly");
+    const req = tx.objectStore(DB_STORE).get(DB_KEY);
+    return new Promise((resolve) => {
+      req.onsuccess = () => resolve(req.result ?? null);
+      req.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function clearIDB(): Promise<void> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(DB_STORE, "readwrite");
+    tx.objectStore(DB_STORE).delete(DB_KEY);
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch { /* noop */ }
+  try { localStorage.removeItem(STORAGE_KEY); } catch { /* noop */ }
+}
+
 /* ───────────────────────── Types ───────────────────────── */
 interface Expense {
   id: string;
@@ -42,7 +103,7 @@ const daysBetween = (a: string, b: string): number => {
 };
 
 const formatCurrency = (n: number): string =>
-  "₹" +
+  "Rs." +
   n.toLocaleString("en-IN", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -82,18 +143,38 @@ export default function Home() {
   const [showReset, setShowReset] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  /* ── persistence ── */
+  /* ── persistence (IndexedDB primary, localStorage fallback) ── */
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setState(JSON.parse(raw));
-    } catch { /* noop */ }
-    setLoaded(true);
+    let cancelled = false;
+    (async () => {
+      // Try IndexedDB first
+      let data = await loadFromIDB();
+      // Fallback: migrate from localStorage if IndexedDB was empty
+      if (!data) {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (raw) {
+            data = JSON.parse(raw);
+            // Migrate to IndexedDB
+            if (data) await saveToIDB(data);
+          }
+        } catch { /* noop */ }
+      }
+      if (!cancelled && data) setState(data);
+      if (!cancelled) setLoaded(true);
+      // Request persistent storage so the browser never evicts our data
+      if (navigator.storage?.persist) {
+        navigator.storage.persist();
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
     if (loaded) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      saveToIDB(state);
+      // Also keep localStorage in sync as secondary backup
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* noop */ }
     }
   }, [state, loaded]);
 
@@ -222,7 +303,7 @@ export default function Home() {
     if (amt > dailyLimit) {
       showToast("Over daily limit! Deducted from savings.", "warning");
     } else {
-      showToast(`₹${amt.toFixed(2)} logged ✓`);
+      showToast(`Rs.${amt.toFixed(2)} logged ✓`);
     }
   };
 
@@ -252,6 +333,7 @@ export default function Home() {
   const handleReset = () => {
     setState(defaultState());
     setShowReset(false);
+    clearIDB();
     showToast("All data cleared");
   };
 
@@ -288,7 +370,7 @@ export default function Home() {
           <div className="glass-card p-6 space-y-5">
             <div>
               <label className="block text-xs font-medium text-[var(--text-secondary)] mb-2 uppercase tracking-wider">
-                Starting Balance (₹)
+                Starting Balance (Rs.)
               </label>
               <input
                 id="setup-balance"
@@ -350,20 +432,34 @@ export default function Home() {
             Day {Math.min(elapsedDays + 1, state.totalDays)} of {state.totalDays} · {shortDate(currentDate)}
           </p>
         </div>
-        <button
-          id="btn-history"
-          className="w-10 h-10 rounded-xl flex items-center justify-center border border-[var(--border-subtle)] hover:bg-[var(--bg-card-hover)] transition-colors"
-          onClick={() => setShowHistory(!showHistory)}
-          aria-label="Toggle history"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            {showHistory ? (
-              <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>
-            ) : (
-              <><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>
-            )}
-          </svg>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            id="btn-history"
+            className="w-10 h-10 rounded-xl flex items-center justify-center border border-[var(--border-subtle)] hover:bg-[var(--bg-card-hover)] transition-colors"
+            onClick={() => setShowHistory(!showHistory)}
+            aria-label="Toggle history"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              {showHistory ? (
+                <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>
+              ) : (
+                <><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>
+              )}
+            </svg>
+          </button>
+          <button
+            id="btn-reset-header"
+            className="h-10 px-3 rounded-xl flex items-center justify-center gap-1.5 border border-[rgba(251,113,133,0.15)] text-[var(--accent-rose)] hover:bg-[rgba(251,113,133,0.08)] transition-colors text-xs font-medium"
+            onClick={() => setShowReset(true)}
+            aria-label="Reset"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="1 4 1 10 7 10"/>
+              <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+            </svg>
+            Reset
+          </button>
+        </div>
       </header>
 
       {!showHistory ? (
@@ -461,7 +557,7 @@ export default function Home() {
                 type="number"
                 inputMode="decimal"
                 className="input-field text-xl font-bold"
-                placeholder="₹ Amount"
+                placeholder="Rs. Amount"
                 value={expenseAmount}
                 onChange={(e) => setExpenseAmount(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleExpense()}
@@ -522,20 +618,20 @@ export default function Home() {
             </div>
           )}
 
-          {/* ── Reset ── */}
-          <div className="pt-4 pb-2 text-center animate-fade-up">
-            {!showReset ? (
-              <button
-                id="btn-show-reset"
-                className="text-xs text-[var(--text-muted)] hover:text-[var(--accent-rose)] transition-colors"
-                onClick={() => setShowReset(true)}
-              >
-                Reset Everything
-              </button>
-            ) : (
-              <div className="glass-card p-4 space-y-3 animate-slide-down">
+          {/* ── Reset Confirmation Modal ── */}
+          {showReset && (
+            <div className="pt-2 pb-2 animate-fade-up">
+              <div className="glass-card p-4 space-y-3 animate-slide-down" style={{ boxShadow: "var(--glow-rose)" }}>
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="w-8 h-8 rounded-lg bg-[rgba(251,113,133,0.12)] flex items-center justify-center">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-rose)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                    </svg>
+                  </div>
+                  <span className="text-sm font-semibold text-[var(--accent-rose)]">Reset Everything?</span>
+                </div>
                 <p className="text-sm text-[var(--text-secondary)]">
-                  This will delete all your data. Are you sure?
+                  This will permanently delete all your expenses, balances, and savings data.
                 </p>
                 <div className="flex gap-3">
                   <button className="btn-ghost flex-1" onClick={() => setShowReset(false)}>
@@ -546,8 +642,8 @@ export default function Home() {
                   </button>
                 </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       ) : (
         /* ═══════════════════ HISTORY VIEW ═══════════════════ */
