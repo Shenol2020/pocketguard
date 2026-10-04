@@ -141,6 +141,8 @@ export default function Home() {
   const [toast, setToast] = useState<{ msg: string; type: ToastType } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showReset, setShowReset] = useState(false);
+  const [showEditBalance, setShowEditBalance] = useState(false);
+  const [editBalanceValue, setEditBalanceValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   /* ── persistence (IndexedDB primary, localStorage fallback) ── */
@@ -231,6 +233,31 @@ export default function Home() {
       initialized: true,
     });
     showToast("Budget initialized! 🚀");
+  };
+
+  /* ── edit main balance ── */
+  const openEditBalance = () => {
+    setEditBalanceValue(state.initialBalance.toString());
+    setShowEditBalance(true);
+  };
+
+  const handleEditBalance = () => {
+    const newBal = parseFloat(editBalanceValue);
+    if (!newBal || newBal <= 0) {
+      showToast("Enter a valid balance", "error");
+      return;
+    }
+    setState((prev) => {
+      const result = recomputeBalances(prev.dayLogs, newBal, prev.startDate, prev.totalDays);
+      return {
+        ...prev,
+        initialBalance: newBal,
+        mainBalance: Math.max(result.mainBalance, 0),
+        savings: Math.max(result.savings, 0),
+      };
+    });
+    setShowEditBalance(false);
+    showToast("Balance updated! Daily limit recalculated ✓");
   };
 
   /* ── log expense (CORE LOGIC) ── */
@@ -497,7 +524,11 @@ export default function Home() {
 
           {/* ── Balance Cards ── */}
           <div className="grid grid-cols-2 gap-3">
-            <div className="glass-card p-4 animate-fade-up">
+            <button
+              id="btn-edit-balance"
+              className="glass-card p-4 animate-fade-up text-left cursor-pointer hover:bg-[var(--bg-card-hover)] transition-colors relative group"
+              onClick={openEditBalance}
+            >
               <div className="flex items-center gap-2 mb-2">
                 <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[var(--accent-sky)] to-blue-600 flex items-center justify-center">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -505,11 +536,15 @@ export default function Home() {
                   </svg>
                 </div>
                 <span className="text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wider">Main</span>
+                <svg className="w-3 h-3 text-[var(--text-muted)] opacity-0 group-hover:opacity-100 transition-opacity ml-auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                </svg>
               </div>
               <div className="text-lg font-bold font-mono text-[var(--accent-sky)] animate-count-up">
                 {formatCurrency(state.mainBalance)}
               </div>
-            </div>
+              <div className="text-[9px] text-[var(--text-muted)] mt-1 opacity-0 group-hover:opacity-100 transition-opacity">Tap to edit</div>
+            </button>
             <div className="glass-card p-4 animate-fade-up">
               <div className="flex items-center gap-2 mb-2">
                 <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[var(--accent-emerald)] to-green-600 flex items-center justify-center">
@@ -542,6 +577,11 @@ export default function Home() {
             <div className="flex justify-between mt-2 text-[10px] text-[var(--text-muted)]">
               <span>Spent: {formatCurrency(totalSpent)}</span>
               <span>Budget: {formatCurrency(state.initialBalance)}</span>
+            </div>
+            <div className="text-center mt-2">
+              <span className="text-[10px] text-[var(--accent-sky)] font-mono">
+                Daily Limit: {formatCurrency(dailyLimit)} × {remainingDays} days left
+              </span>
             </div>
           </div>
 
@@ -703,6 +743,88 @@ export default function Home() {
               </button>
               <button id="btn-confirm-reset" className="btn-danger flex-1" onClick={handleReset}>
                 Delete All Data
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit Balance Overlay ── */}
+      {showEditBalance && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-5"
+          style={{ backgroundColor: "rgba(5, 13, 26, 0.85)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
+          onClick={() => setShowEditBalance(false)}
+        >
+          <div
+            className="glass-card p-6 w-full max-w-sm space-y-4 animate-slide-down"
+            style={{ boxShadow: "var(--glow-sky)", border: "1px solid rgba(56,189,248,0.2)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[rgba(56,189,248,0.12)] flex items-center justify-center shrink-0">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-sky)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-[var(--text-primary)]">Edit Balance</h3>
+                <p className="text-xs text-[var(--text-muted)]">Daily limit will auto-adjust</p>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-[var(--text-secondary)] mb-2 uppercase tracking-wider">
+                New Total Balance (Rs.)
+              </label>
+              <input
+                id="edit-balance-input"
+                type="number"
+                inputMode="decimal"
+                className="input-field text-xl font-bold"
+                placeholder="Enter new balance"
+                value={editBalanceValue}
+                onChange={(e) => setEditBalanceValue(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleEditBalance()}
+                autoFocus
+              />
+            </div>
+
+            <div className="glass-card p-3 bg-[rgba(56,189,248,0.05)]" style={{ borderRadius: "var(--radius-sm)" }}>
+              <div className="flex justify-between text-xs text-[var(--text-muted)] mb-1">
+                <span>Remaining Days</span>
+                <span className="font-mono">{remainingDays}</span>
+              </div>
+              <div className="flex justify-between text-xs text-[var(--text-muted)] mb-1">
+                <span>Total Spent</span>
+                <span className="font-mono">{formatCurrency(totalSpent)}</span>
+              </div>
+              {editBalanceValue && parseFloat(editBalanceValue) > 0 && (
+                <div className="flex justify-between text-xs text-[var(--accent-sky)] font-semibold pt-1 border-t border-[var(--border-subtle)]">
+                  <span>New Daily Limit</span>
+                  <span className="font-mono">
+                    {formatCurrency(
+                      Math.max(
+                        recomputeBalances(state.dayLogs, parseFloat(editBalanceValue), state.startDate, state.totalDays).mainBalance,
+                        0
+                      ) / remainingDays
+                    )}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 pt-1">
+              <button className="btn-ghost flex-1" onClick={() => setShowEditBalance(false)}>
+                Cancel
+              </button>
+              <button
+                id="btn-save-balance"
+                className="btn-primary flex-1 text-center"
+                onClick={handleEditBalance}
+                disabled={!editBalanceValue || parseFloat(editBalanceValue) <= 0}
+              >
+                Save Balance
               </button>
             </div>
           </div>
