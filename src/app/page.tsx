@@ -143,6 +143,8 @@ export default function Home() {
   const [showReset, setShowReset] = useState(false);
   const [showEditBalance, setShowEditBalance] = useState(false);
   const [editBalanceValue, setEditBalanceValue] = useState("");
+  const [showEditDays, setShowEditDays] = useState(false);
+  const [editDaysValue, setEditDaysValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   /* ── persistence (IndexedDB primary, localStorage fallback) ── */
@@ -258,6 +260,32 @@ export default function Home() {
     });
     setShowEditBalance(false);
     showToast("Balance updated! Daily limit recalculated ✓");
+  };
+
+  /* ── edit remaining days ── */
+  const openEditDays = () => {
+    setEditDaysValue(remainingDays.toString());
+    setShowEditDays(true);
+  };
+
+  const handleEditDays = () => {
+    const newRemaining = parseInt(editDaysValue, 10);
+    if (!newRemaining || newRemaining < 1 || newRemaining > 365) {
+      showToast("Days must be 1–365", "error");
+      return;
+    }
+    const newTotalDays = elapsedDays + newRemaining;
+    setState((prev) => {
+      const result = recomputeBalances(prev.dayLogs, prev.initialBalance, prev.startDate, newTotalDays);
+      return {
+        ...prev,
+        totalDays: newTotalDays,
+        mainBalance: Math.max(result.mainBalance, 0),
+        savings: Math.max(result.savings, 0),
+      };
+    });
+    setShowEditDays(false);
+    showToast(`Period updated! ${newRemaining} days remaining ✓`);
   };
 
   /* ── log expense (CORE LOGIC) ── */
@@ -564,9 +592,16 @@ export default function Home() {
           <div className="glass-card p-4 animate-fade-up">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-[var(--text-secondary)]">Budget Progress</span>
-              <span className="text-xs font-mono text-[var(--text-muted)]">
-                {daysCompleted}/{state.totalDays} days
-              </span>
+              <button
+                id="btn-edit-days"
+                className="flex items-center gap-1.5 text-xs font-mono text-[var(--text-muted)] hover:text-[var(--accent-amber)] transition-colors cursor-pointer group"
+                onClick={openEditDays}
+              >
+                <span>{daysCompleted}/{state.totalDays} days</span>
+                <svg className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 transition-opacity" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                </svg>
+              </button>
             </div>
             <div className="progress-track">
               <div
@@ -825,6 +860,90 @@ export default function Home() {
                 disabled={!editBalanceValue || parseFloat(editBalanceValue) <= 0}
               >
                 Save Balance
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit Days Overlay ── */}
+      {showEditDays && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-5"
+          style={{ backgroundColor: "rgba(5, 13, 26, 0.85)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
+          onClick={() => setShowEditDays(false)}
+        >
+          <div
+            className="glass-card p-6 w-full max-w-sm space-y-4 animate-slide-down"
+            style={{ boxShadow: "0 0 40px rgba(251, 191, 36, 0.12)", border: "1px solid rgba(251,191,36,0.2)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[rgba(251,191,36,0.12)] flex items-center justify-center shrink-0">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-amber)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-[var(--text-primary)]">Edit Remaining Days</h3>
+                <p className="text-xs text-[var(--text-muted)]">Daily limit will auto-adjust</p>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-[var(--text-secondary)] mb-2 uppercase tracking-wider">
+                New Remaining Days
+              </label>
+              <input
+                id="edit-days-input"
+                type="number"
+                inputMode="numeric"
+                className="input-field text-xl font-bold"
+                placeholder="Enter remaining days"
+                value={editDaysValue}
+                onChange={(e) => setEditDaysValue(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleEditDays()}
+                min={1}
+                max={365}
+                autoFocus
+              />
+            </div>
+
+            <div className="glass-card p-3 bg-[rgba(251,191,36,0.05)]" style={{ borderRadius: "var(--radius-sm)" }}>
+              <div className="flex justify-between text-xs text-[var(--text-muted)] mb-1">
+                <span>Days Completed</span>
+                <span className="font-mono">{daysCompleted}</span>
+              </div>
+              <div className="flex justify-between text-xs text-[var(--text-muted)] mb-1">
+                <span>Main Balance</span>
+                <span className="font-mono">{formatCurrency(state.mainBalance)}</span>
+              </div>
+              {editDaysValue && parseInt(editDaysValue, 10) > 0 && (
+                <div className="flex justify-between text-xs text-[var(--accent-amber)] font-semibold pt-1 border-t border-[var(--border-subtle)]">
+                  <span>New Daily Limit</span>
+                  <span className="font-mono">
+                    {formatCurrency(
+                      Math.max(
+                        recomputeBalances(state.dayLogs, state.initialBalance, state.startDate, elapsedDays + parseInt(editDaysValue, 10)).mainBalance,
+                        0
+                      ) / Math.max(parseInt(editDaysValue, 10), 1)
+                    )}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 pt-1">
+              <button className="btn-ghost flex-1" onClick={() => setShowEditDays(false)}>
+                Cancel
+              </button>
+              <button
+                id="btn-save-days"
+                className="btn-primary flex-1 text-center"
+                onClick={handleEditDays}
+                disabled={!editDaysValue || parseInt(editDaysValue, 10) < 1}
+              >
+                Save Days
               </button>
             </div>
           </div>
